@@ -1,59 +1,44 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/"
-        }
-    }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
+    <style>body{margin:0;overflow:hidden;background:#222;}canvas{width:100vw;height:100vh;}</style>
 </head>
-<body style="margin:0;overflow:hidden;background:#222;">
-    <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import * as VRM from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2.0.9/+esm';
+<body>
+<script>
+const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.1,1000);
+camera.position.z=3;const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0xffffff,1));
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.1, 20);
-        camera.position.set(0, 1.4, 1);
-        
-        const renderer = new THREE.WebGLRenderer({antialias:true});
-        renderer.setSize(innerWidth, innerHeight);
-        document.body.appendChild(renderer.domElement);
-        
-        scene.add(new THREE.AmbientLight(0xffffff, 1));
-        
-        const controls = new OrbitControls(camera, renderer.domElement);
-        let vrm;
-        
-        const loader = new GLTFLoader();
-        loader.load('./Amelia.vrm', async (gltf) => {
-            vrm = await VRM.VRM.from(gltf);
-            scene.add(vrm.scene);
-            vrm.scene.rotation.y = Math.PI;
-            console.log('✅ YOUR AMELIA LOADED!');
-        });
-        
-        function animate() {
-            requestAnimationFrame(animate);
-            if(vrm) {
-                vrm.update(0.016);
-                // Mouth animation
-                vrm.expressionManager.setValue('aa', Math.sin(Date.now()*0.01)*0.5+0.5);
-            }
-            controls.update();
-            renderer.render(scene, camera);
-        }
-        animate();
-        
-        window.startTalking = (text) => {
-            if(vrm) vrm.expressionManager.setValue('aa', 1);
-            speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-        };
-    </script>
+// 2D AVATAR
+const canvas=document.createElement('canvas');canvas.width=canvas.height=512;
+const ctx=canvas.getContext('2d'),texture=new THREE.CanvasTexture(canvas),
+sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture}));
+sprite.scale.set(2,2,1);scene.add(sprite);let mouthHeight=30;let isTalking=false;
+
+function drawFace(){
+    ctx.fillStyle='#f4c4f3';ctx.beginPath();ctx.arc(256,256,200,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.fillRect(140,180,60,60);ctx.fillRect(312,180,60,60);
+    ctx.fillStyle='#333';ctx.fillRect(155,195,30,30);ctx.fillRect(327,195,30,30);
+    ctx.fillRect(200,280,112,mouthHeight);texture.needsUpdate=true;
+}
+
+// FLUTTERFLOW READY
+window.startTalking=(text)=>{
+    isTalking=true;
+    const utter=new SpeechSynthesisUtterance(text);
+    utter.onend=()=>isTalking=false;
+    speechSynthesis.speak(utter);
+};
+
+function animate(){
+    requestAnimationFrame(animate);
+    if(isTalking) mouthHeight=30+Math.sin(Date.now()*0.02)*40;
+    else mouthHeight=30;
+    drawFace();renderer.render(scene,camera);
+}
+animate();
+</script>
 </body>
 </html>
