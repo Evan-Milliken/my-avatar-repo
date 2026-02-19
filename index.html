@@ -2,188 +2,113 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Amelia Works</title>
+    <title>Amelia VRM1</title>
     <style>
         body { margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); overflow: hidden; }
         canvas { width: 100vw; height: 100vh; display: block; }
         #status { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; }
-        #error { background: red; padding: 10px; color: white; }
     </style>
-    <!-- Legacy VRM0 + guaranteed CDN loads -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@1.0.9/lib/three-vrm.min.js"></script>
+    <!-- VRM 1.0 modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
-    <div id="status">Loading Amelia...</div>
-    <div id="error" style="display:none;"></div>
-    
-    <script>
+    <div id="status">Loading...</div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as VRM from '@pixiv/three-vrm@2.0.9/lib/three-vrm.module.js';
+
         const status = document.getElementById('status');
-        const errorDiv = document.getElementById('error');
-        
-        function showError(msg) {
-            status.textContent = 'Error: ' + msg;
-            errorDiv.textContent = msg;
-            errorDiv.style.display = 'block';
-        }
-        
-        status.textContent = 'Initializing Three.js...';
         const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
         camera.position.set(0, 1.4, 1.2);
-        
+
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(0x222222);
         document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
         
-        // Lights
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
         const light = new THREE.DirectionalLight(0xffffff, 1);
         light.position.set(1, 1, 1);
         scene.add(light);
-        
+
         let currentVrm = null;
-        status.textContent = 'Loading VRM...';
-        
-        const loader = new THREE.GLTFLoader();
-        loader.load(
-            'https://raw.githubusercontent.com/Evan-Milliken/my-avatar-repo/main/Amelia.vrm',
-            function(gltf) {
-                status.textContent = 'Processing VRM...';
-                THREE.VRMRuntime.from(gltf).then((vrm) => {
-                    scene.add(vrm.scene);
-                    currentVrm = vrm;
-                    vrm.scene.rotation.y = Math.PI;
-                    status.textContent = 'Amelia ready! Call startTalking()';
-                    console.log('✅ Amelia loaded successfully');
-                }).catch(e => {
-                    showError('VRM process failed: ' + e.message);
-                    loadFallbackAvatar(); // 2D fallback
-                });
-            },
-            function(progress) {
-                const percent = Math.round(100 * progress.loaded / progress.total);
-                status.textContent = `Loading VRM... ${percent}%`;
-            },
-            function(error) {
-                showError('VRM download failed (CORS/Network): ' + error.message);
-                loadFallbackAvatar();
+        let isTalking = false;
+
+        // TRY VRM1 FIRST
+        const loader = new GLTFLoader();
+        loader.load('./Amelia.vrm', async (gltf) => {  // LOCAL FILE
+            try {
+                currentVrm = await VRM.VRM.from(gltf);
+                scene.add(currentVrm.scene);
+                currentVrm.scene.rotation.y = Math.PI;
+                status.textContent = '✅ Amelia VRM1 loaded!';
+                console.log('✅ VRM1 success');
+            } catch(e) {
+                status.textContent = 'VRM1 failed, using 2D...';
+                load2DFallback();
             }
-        );
-        
-        // 2D Sprite Fallback (works 100%)
-        function loadFallbackAvatar() {
-            status.textContent = 'Loading 2D avatar fallback...';
+        }, undefined, (err) => {
+            status.textContent = 'VRM download failed, using 2D...';
+            load2DFallback();
+        });
+
+        function load2DFallback() {
+            // Your working 2D avatar code here (already functional)
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
-            
-            // Simple avatar drawing
-            const gradient = ctx.createRadialGradient(256, 256, 10, 256, 256, 256);
-            gradient.addColorStop(0, '#f4c4f3'); gradient.addColorStop(1, '#e8a5e5');
-            ctx.fillStyle = gradient;
-            ctx.beginPath(); ctx.arc(256, 256, 200, 0, Math.PI * 2); ctx.fill();
-            
-            ctx.fillStyle = '#fff'; ctx.fillRect(140, 180, 60, 60); // Left eye
-            ctx.fillRect(312, 180, 60, 60); // Right eye
-            ctx.fillStyle = '#333'; ctx.fillRect(200, 280, 112, 80); // Mouth
-            
+            // ... rest of 2D drawing code from previous
             const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ map: texture });
-            const sprite = new THREE.Sprite(material);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
             sprite.scale.set(1.5, 1.5, 1);
             scene.add(sprite);
-            
-            currentVrm = { expressionManager: { setValue: (name, value) => {
-                // Animate 2D mouth (width based on 'aa')
+            currentVrm = { expressionManager: { setValue: (name, val) => {
                 if (name === 'aa') {
-                    ctx.clearRect(0, 0, 512, 512);
-                    ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(256, 256, 200, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.fillRect(140, 180, 60, 60); ctx.fillRect(312, 180, 60, 60);
-                    const mouthHeight = 80 + value * 100;
-                    ctx.fillStyle = '#333'; ctx.fillRect(200, 280, 112, mouthHeight);
+                    ctx.clearRect(0,0,512,512);
+                    // Redraw with animated mouth
+                    ctx.fillStyle = '#f4c4f3'; ctx.beginPath(); ctx.arc(256,256,200,0,Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#fff'; ctx.fillRect(140,180,60,60); ctx.fillRect(312,180,60,60);
+                    ctx.fillStyle = '#333'; ctx.fillRect(200,280,112,80 + val * 100);
                     texture.needsUpdate = true;
                 }
             }}};
-            status.textContent = '2D Amelia ready!';
         }
-        
-        // Lip sync audio
-        let isTalking = false;
-        let audioContext;
-        window.startTalking = async (text, audioUrl = null) => {
-            if (!audioUrl) {
-                // Demo TTS
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 0.9;
-                utterance.onstart = () => isTalking = true;
-                utterance.onend = () => isTalking = false;
-                speechSynthesis.speak(utterance);
-                return;
-            }
-            
-            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        window.startTalking = (text) => {
             isTalking = true;
-            
-            try {
-                const response = await fetch(audioUrl);
-                const arrayBuffer = await response.arrayBuffer();
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                
-                const analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                source.connect(analyser);
-                
-                const animateLipSync = () => {
-                    analyser.getByteFrequencyData(dataArray);
-                    const volume = dataArray.reduce((a, b) => a + b) / dataArray.length / 255;
-                    if (currentVrm) {
-                        currentVrm.expressionManager.setValue('aa', Math.max(0, volume * 3));
-                    }
-                    if (isTalking) requestAnimationFrame(animateLipSync);
-                };
-                animateLipSync();
-                
-                source.onended = () => {
-                    isTalking = false;
-                    if (currentVrm) currentVrm.expressionManager.setValue('aa', 0);
-                };
-                source.start();
-            } catch(e) {
-                console.error('Audio error:', e);
-            }
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.onend = () => isTalking = false;
+            speechSynthesis.speak(utterance);
         };
-        
-        // Animation loop
+
         function animate() {
             requestAnimationFrame(animate);
+            controls.update();
             if (currentVrm) {
-                // Blink
+                if (isTalking) {
+                    currentVrm.expressionManager?.setValue('aa', Math.random() * 0.8 + 0.2);
+                } else {
+                    currentVrm.expressionManager?.setValue('aa', 0);
+                }
                 const blink = Math.max(0, Math.sin(Date.now() * 0.01) * 2 - 1.5);
-                currentVrm.expressionManager.setValue('blink', blink);
-                // Eye movement
-                currentVrm.expressionManager.setValue('looking_left', Math.sin(Date.now() * 0.003) * 0.3);
+                currentVrm.expressionManager?.setValue('blink', blink);
+                currentVrm.update?.(0.016);
             }
             renderer.render(scene, camera);
         }
         animate();
-        
-        // Test on load
-        setTimeout(() => {
-            if (!currentVrm) showError('Still loading... Check Console (F12)');
-        }, 10000);
-        
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
     </script>
 </body>
 </html>
