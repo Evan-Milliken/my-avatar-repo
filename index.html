@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Amelia Avatar</title>
+    <!-- Loads the 3D engines -->
+    <script src="https://unpkg.com"></script>
+    <script src="https://unpkg.com"></script>
+    <script src="https://unpkg.com"></script>
+    <style>
+        body { margin: 0; background-color: #000; overflow: hidden; }
+        canvas { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <script>
+        let currentVrm = null;
+        let isTalking = false;
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
+        camera.position.set(0, 1.4, 0.8); // Focus on Amelia's face
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const light = new THREE.DirectionalLight(0xffffff, 1.0);
+        light.position.set(1, 1, 1).normalize();
+        scene.add(light);
+
+        // Loads Amelia from your repository
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+            'https://raw.githubusercontent.com/Evan-Milliken/my-avatar-repo/main/Amelia.vrm',
+            (gltf) => {
+                THREE.VRM.from(gltf).then((vrm) => {
+                    scene.add(vrm.scene);
+                    currentVrm = vrm;
+                    vrm.scene.rotation.y = Math.PI; // Face forward
+                });
+            }
+        );
+
+        // This function will be triggered by FlutterFlow later
+        window.startTalking = (text) => {
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.onstart = () => { isTalking = true; };
+            uttr.onend = () => { 
+                isTalking = false; 
+                if(currentVrm) currentVrm.expressionManager.setValue('aa', 0); 
+            };
+            window.speechSynthesis.speak(uttr);
+        };
+
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            if (currentVrm) {
+                if (isTalking) {
+                    // Simple mouth movement loop
+                    currentVrm.expressionManager.setValue('aa', Math.sin(Date.now() * 0.02) * 0.5 + 0.5);
+                }
+                currentVrm.update(clock.getDelta());
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
