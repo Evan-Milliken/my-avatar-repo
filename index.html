@@ -1,174 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>Amelia Avatar - Working</title>
-    <style>
-        body { margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); overflow: hidden; }
-        canvas { width: 100vw; height: 100vh; display: block; }
-        #status { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; font-size: 14px; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
-<body>
-    <div id="status">Loading avatar...</div>
-    <script>
-        const status = document.getElementById('status');
+<body style="margin:0;overflow:hidden;background:#222;">
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as VRM from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@2.0.9/+esm';
+
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 0, 3);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        const camera = new THREE.PerspectiveCamera(30, innerWidth/innerHeight, 0.1, 20);
+        camera.position.set(0, 1.4, 1);
+        
+        const renderer = new THREE.WebGLRenderer({antialias:true});
+        renderer.setSize(innerWidth, innerHeight);
         document.body.appendChild(renderer.domElement);
-
-        // Lights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1, 1);
-        scene.add(directionalLight);
-
-        let avatarSprite = null;
-        let isTalking = false;
-        let mouthHeight = 30;
-
-        // CREATE 2D AVATAR SPRITE (Your working purple one)
-        function createAvatar() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512; 
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            
-            // Background face
-            const gradient = ctx.createRadialGradient(256, 256, 10, 256, 256, 256);
-            gradient.addColorStop(0, '#f4c4f3'); 
-            gradient.addColorStop(1, '#e8a5e5');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(256, 256, 200, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Eyes
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(140, 180, 60, 60);  // Left eye
-            ctx.fillRect(312, 180, 60, 60);  // Right eye
-            ctx.fillStyle = '#333';
-            ctx.fillRect(155, 195, 30, 30);  // Left pupil
-            ctx.fillRect(327, 195, 30, 30);  // Right pupil
-            
-            // Mouth (animated)
-            ctx.fillStyle = '#333';
-            ctx.fillRect(200, 280, 112, mouthHeight);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.SpriteMaterial({ map: texture });
-            avatarSprite = new THREE.Sprite(material);
-            avatarSprite.scale.set(2, 2, 1);
-            scene.add(avatarSprite);
-            
-            status.textContent = '✅ Avatar ready! Try: startTalking("Hello!")';
-        }
-
-        // Lip sync animation
-        function updateAvatar() {
-            if (!avatarSprite) return;
-            
-            const canvas = avatarSprite.material.map.image;
-            const ctx = canvas.getContext('2d');
-            
-            // Redraw face
-            ctx.fillStyle = '#f4c4f3';
-            ctx.beginPath();
-            ctx.arc(256, 256, 200, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Eyes
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(140, 180, 60, 60);
-            ctx.fillRect(312, 180, 60, 60);
-            ctx.fillStyle = '#333';
-            ctx.fillRect(155, 195, 30, 30);
-            ctx.fillRect(327, 195, 30, 30);
-            
-            // Animated mouth
-            ctx.fillStyle = '#333';
-            ctx.fillRect(200, 280, 112, mouthHeight);
-            
-            canvas.needsUpdate = true;
-        }
-
-        // Blinking
-        function blink() {
-            const blinkValue = Math.max(0, Math.sin(Date.now() * 0.01) * 2 - 1.5);
-            if (avatarSprite) {
-                const canvas = avatarSprite.material.map.image;
-                const ctx = canvas.getContext('2d');
-                const eyeHeight = 60 - (blinkValue * 50);
-                ctx.clearRect(140, 180, 232, 60);
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(140, 180, 60, eyeHeight);
-                ctx.fillRect(312, 180, 60, eyeHeight);
-                ctx.fillStyle = '#333';
-                ctx.fillRect(155, 195, 30, 30);
-                ctx.fillRect(327, 195, 30, 30);
-                canvas.needsUpdate = true;
-            }
-        }
-
-        // PUBLIC FUNCTIONS FOR FLUTTERFLOW
-        window.startTalking = async (text, audioUrl = null) => {
-            isTalking = true;
-            console.log('🗣️ Talking:', text);
-            
-            if (!audioUrl) {
-                // Demo speech
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.rate = 0.9;
-                utterance.onend = () => { 
-                    isTalking = false; 
-                    mouthHeight = 30;
-                    updateAvatar();
-                };
-                speechSynthesis.speak(utterance);
-            } else {
-                // Groq audio (add later)
-                console.log('🎵 Audio URL:', audioUrl);
-            }
-        };
-
-        // Animation loop
+        
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        let vrm;
+        
+        const loader = new GLTFLoader();
+        loader.load('./Amelia.vrm', async (gltf) => {
+            vrm = await VRM.VRM.from(gltf);
+            scene.add(vrm.scene);
+            vrm.scene.rotation.y = Math.PI;
+            console.log('✅ YOUR AMELIA LOADED!');
+        });
+        
         function animate() {
             requestAnimationFrame(animate);
-            
-            // Lip sync while talking
-            if (isTalking) {
-                mouthHeight = 30 + Math.sin(Date.now() * 0.02) * 30 + Math.random() * 20;
-                mouthHeight = Math.max(30, Math.min(130, mouthHeight));
-            } else {
-                mouthHeight = 30;
+            if(vrm) {
+                vrm.update(0.016);
+                // Mouth animation
+                vrm.expressionManager.setValue('aa', Math.sin(Date.now()*0.01)*0.5+0.5);
             }
-            
-            blink();
-            updateAvatar();
+            controls.update();
             renderer.render(scene, camera);
         }
-
-        // Initialize
-        createAvatar();
         animate();
-
-        // Auto-test after 2 seconds
-        setTimeout(() => {
-            console.log('🧪 Auto-test: startTalking("Amelia is ready!")');
-            window.startTalking("Amelia is ready to chat!");
-        }, 2000);
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        
+        window.startTalking = (text) => {
+            if(vrm) vrm.expressionManager.setValue('aa', 1);
+            speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        };
     </script>
 </body>
 </html>
