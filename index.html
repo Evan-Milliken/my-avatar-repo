@@ -4,100 +4,124 @@
     <meta charset="utf-8">
     <title>Amelia Avatar</title>
     <style>
-        body { margin: 0; background-color: #222; overflow: hidden; }
-        canvas { width: 100%; height: 100%; display: block; }
+        body { margin: 0; background-color: #222; overflow: hidden; font-family: Arial; }
+        canvas { width: 100vw; height: 100vh; display: block; }
+        #error { position: absolute; top: 10px; left: 10px; color: white; background: red; padding: 10px; }
     </style>
-    <!-- Three.js core -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.min.js"></script>
-    <!-- GLTFLoader -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.177.0/examples/js/loaders/GLTFLoader.js"></script>
-    <!-- Three-VRM (script tag version; for module use importmap below if needed) -->
-    <script src="https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.2/lib/three-vrm.min.js"></script>
+    <!-- Import map for ES modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.177.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.177.0/examples/jsm/"
+        }
+    }
+    </script>
 </head>
 <body>
-    <script>
+    <div id="error" style="display:none;"></div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { VRMLoaderPlugin, VRMUtils } from 'https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.4.2/lib/three-vrm.module.js';
+
         let currentVrm = null;
         let audioContext, analyser, lipsyncNode;
         let isTalking = false;
 
         const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x222222);
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 20);
         camera.position.set(0, 1.4, 1.0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setClearColor(0x222222);
         document.body.appendChild(renderer.domElement);
 
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Lights
         const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
         scene.add(ambientLight);
         const frontLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        frontLight.position.set(0, 1, 1).normalize();
+        frontLight.position.set(0, 1, 1);
         scene.add(frontLight);
 
-        const loader = new THREE.GLTFLoader();
+        const errorDiv = document.getElementById('error');
+        function showError(msg) {
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+            console.error(msg);
+        }
+
+        // Load VRM
+        const loader = new GLTFLoader();
+        loader.register((parser) => new VRMLoaderPlugin(parser));
         loader.load(
             'https://raw.githubusercontent.com/Evan-Milliken/my-avatar-repo/main/Amelia.vrm',
-            (gltf) => {
-                THREE.VRM.from(gltf).then((vrm) => {
+            async (gltf) => {
+                try {
+                    const vrm = gltf.userData.vrm;
+                    VRMUtils.rotateVRM0(gltf); // Fix VRM0 orientation if needed
                     scene.add(vrm.scene);
                     currentVrm = vrm;
-                    vrm.scene.rotation.y = Math.PI;
                     console.log("Amelia Loaded!");
-                    initLipSync(); // Init after load
-                });
+                    initLipSync();
+                } catch (e) {
+                    showError('VRM process error: ' + e.message);
+                }
             },
-            (progress) => console.log('Loading...', (progress.loaded / progress.total * 100) + '%'),
-            (error) => console.error("Error loading Amelia:", error)
+            (progress) => {
+                console.log('Loading...', Math.round(100 * progress.loaded / progress.total) + '%');
+            },
+            (error) => showError('Load error (CORS?): ' + error.message)
         );
 
-        // Simple MFCC-like lipsync from WebAudio (free, no lib needed; expand for better)
+        // Lip sync setup (same as before)
         function initLipSync() {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (!currentVrm) return;
+            audioContext = new AudioContext();
             analyser = audioContext.createAnalyser();
             analyser.fftSize = 256;
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
             
-            // Connect Groq audio here (in startTalking)
             lipsyncNode = audioContext.createScriptProcessor(2048, 1, 1);
-            lipsyncNode.onaudioprocess = (e) => {
+            lipsyncNode.onaudioprocess = () => {
                 analyser.getByteFrequencyData(dataArray);
-                const volume = dataArray.reduce((a, b) => a + b) / bufferLength / 255;
-                if (currentVrm && isTalking) {
-                    const aa = Math.max(0, volume * 2); // Mouth open based on volume
+                const volume = dataArray.reduce((a, b) => a + b) / dataArray.length / 255;
+                if (isTalking && currentVrm) {
+                    const aa = Math.max(0, volume * 2);
                     currentVrm.expressionManager.setValue('aa', aa);
-                    currentVrm.expressionManager.setValue('o', aa * 0.5); // Add 'o' shape
+                    currentVrm.expressionManager.setValue('o', aa * 0.5);
                 }
             };
             lipsyncNode.connect(audioContext.destination);
         }
 
-        // Expose for FlutterFlow props (call from Custom Action after Groq)
-        window.startTalking = (groqText, groqAudioUrl) => {
-            if (!audioContext) return;
+        window.startTalking = async (groqText, groqAudioUrl) => {
+            if (!audioContext) audioContext = new AudioContext();
             isTalking = true;
-            
-            // Load & play Groq TTS audio blob/URL
-            fetch(groqAudioUrl)
-                .then(res => res.arrayBuffer())
-                .then(buffer => audioContext.decodeAudioData(buffer))
-                .then(decoded => {
-                    const source = audioContext.createBufferSource();
-                    source.buffer = decoded;
-                    source.connect(analyser);
-                    analyser.connect(lipsyncNode);
-                    source.start(0);
-                    source.onended = () => {
-                        isTalking = false;
-                        if (currentVrm) {
-                            currentVrm.expressionManager.setValue('aa', 0);
-                            currentVrm.expressionManager.setValue('o', 0);
-                        }
-                    };
-                });
-            
-            // Fallback blink/text viz if needed
+            try {
+                const res = await fetch(groqAudioUrl);
+                const buffer = await res.arrayBuffer();
+                const decoded = await audioContext.decodeAudioData(buffer);
+                const source = audioContext.createBufferSource();
+                source.buffer = decoded;
+                source.connect(analyser);
+                analyser.connect(lipsyncNode);
+                source.start();
+                source.onended = () => {
+                    isTalking = false;
+                    if (currentVrm) {
+                        currentVrm.expressionManager.setValue('aa', 0);
+                        currentVrm.expressionManager.setValue('o', 0);
+                    }
+                };
+            } catch (e) {
+                showError('Audio error: ' + e.message);
+            }
             console.log('Talking:', groqText);
         };
 
@@ -105,21 +129,20 @@
         function animate() {
             requestAnimationFrame(animate);
             const delta = clock.getDelta();
+            controls.update();
             if (currentVrm) {
-                // Blinking
+                // Blink
                 const blinkValue = Math.max(0, Math.sin(Date.now() * 0.001) * 1.5 - 1.3);
                 currentVrm.expressionManager.setValue('blink', blinkValue);
-                // Eye gaze: subtle head/eye follow (simulate chat direction)
-                currentVrm.expressionManager.setValue('lookLeft', Math.sin(Date.now() * 0.002) * 0.2);
-                currentVrm.expressionManager.setValue('lookRight', Math.cos(Date.now() * 0.002) * 0.2);
-                
+                // Eye gaze
+                currentVrm.expressionManager.setValue('looking_left', Math.sin(Date.now() * 0.002) * 0.3);
+                currentVrm.expressionManager.setValue('looking_right', Math.cos(Date.now() * 0.002) * 0.3);
                 currentVrm.update(delta);
             }
             renderer.render(scene, camera);
         }
         animate();
 
-        // Resize handler
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
